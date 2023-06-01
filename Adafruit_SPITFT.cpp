@@ -1037,6 +1037,15 @@ void Adafruit_SPITFT::writePixels(uint16_t *colors, uint32_t len, bool block,
     spi_write_blocking(pi_spi, (uint8_t *)colors, len * 2);
   }
   return;
+#elif defined(ARDUINO_ARCH_RTTHREAD)
+  if (!bigEndian) {
+    swapBytes(colors, len); // convert little-to-big endian for display
+  }
+  hwspi._spi->transfer(colors, 2 * len);
+  if (!bigEndian) {
+    swapBytes(colors, len); // big-to-little endian to restore pixel buffer
+  }
+  return;
 #elif defined(USE_SPI_DMA) &&                                                  \
     (defined(__SAMD51__) || defined(ARDUINO_SAMD_ZERO))
   if ((connection == TFT_HARD_SPI) || (connection == TFT_PARALLEL)) {
@@ -1244,7 +1253,35 @@ void Adafruit_SPITFT::writeColor(uint16_t color, uint32_t len) {
     rtos_free(pixbuf);
     return;
   }
-#else                      // !ESP32
+#elif defined(ARDUINO_ARCH_RTTHREAD)
+  // at most 2 scan lines
+  uint32_t pixbufcount;
+  uint16_t *pixbuf;
+  int16_t lines = height() / 4;
+  do {
+    pixbufcount = min(len, ((uint32_t)lines * width()));
+    pixbuf = (uint16_t *)rt_malloc(2 * pixbufcount);
+    lines -= 2;
+  } while (!pixbuf && lines > 0);
+  if (pixbuf) {
+    uint16_t const swap_color = __builtin_bswap16(color);
+
+    // fill buffer with color
+    for (uint32_t i = 0; i < pixbufcount; i++) {
+      pixbuf[i] = swap_color;
+    }
+
+    while (len) {
+      uint32_t const count = min(len, pixbufcount);
+      // Don't need to swap color inside the function
+      writePixels(pixbuf, count, true, true);
+      len -= count;
+    }
+
+    rt_free(pixbuf);
+    return;
+  }
+#else // !ESP32
 #if defined(USE_SPI_DMA) && (defined(__SAMD51__) || defined(ARDUINO_SAMD_ZERO))
   if (((connection == TFT_HARD_SPI) || (connection == TFT_PARALLEL)) &&
       (len >= 16)) { // Don't bother with DMA on short pixel runs
