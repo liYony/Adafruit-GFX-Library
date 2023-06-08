@@ -1266,16 +1266,16 @@ void Adafruit_SPITFT::writeColor(uint16_t color, uint32_t len) {
   if (pixbuf) {
     uint16_t const swap_color = __builtin_bswap16(color);
 
-    // fill buffer with color
-    for (uint32_t i = 0; i < pixbufcount; i++) {
-      pixbuf[i] = swap_color;
-    }
-
     while (len) {
       uint32_t const count = min(len, pixbufcount);
       // Don't need to swap color inside the function
       writePixels(pixbuf, count, true, true);
       len -= count;
+      
+      // fill buffer with color
+      for (uint32_t i = 0; i < pixbufcount; i++) {
+        pixbuf[i] = swap_color;
+      }
     }
 
     rt_free(pixbuf);
